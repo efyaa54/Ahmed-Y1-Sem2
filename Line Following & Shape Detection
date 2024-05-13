@@ -1,0 +1,575 @@
+import cv2  
+
+import numpy as np 
+
+import RPi.GPIO as GPIO 
+
+def nothing(x):
+    # any operation
+    pass
+
+  
+
+GPIO.setwarnings(False) 
+
+  
+
+in1 = 26
+in2 = 19
+enA = 13
+
+in3 = 20
+in4 = 16
+enB = 12
+
+  
+
+temp1 = 1 
+
+GPIO.setmode(GPIO.BCM) 
+
+GPIO.setup(in1,GPIO.OUT) 
+
+GPIO.setup(in2,GPIO.OUT) 
+
+GPIO.setup(in3,GPIO.OUT) 
+
+GPIO.setup(in4,GPIO.OUT) 
+
+GPIO.setup(enA,GPIO.OUT) 
+
+GPIO.setup(enB,GPIO.OUT) 
+
+GPIO.output(in1,GPIO.LOW) 
+
+GPIO.output(in2,GPIO.LOW) 
+
+GPIO.output(in3,GPIO.LOW) 
+
+GPIO.output(in4,GPIO.LOW) 
+
+  
+
+p1=GPIO.PWM(enA,255) 
+
+p1.start(20) 
+
+p2=GPIO.PWM(enB,255) 
+
+p2.start(20) 
+
+
+
+cap = cv2.VideoCapture(0) 
+
+cap.set(3, 256) 
+
+cap.set( 4, 144)
+
+cv2.namedWindow("Trackbars")
+
+cv2.namedWindow("Frame", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("Frame", 600, 400)
+cv2.namedWindow("Mask", cv2.WINDOW_NORMAL)
+cv2.resizeWindow("Mask", 600, 400)
+
+
+cv2.createTrackbar("L-Hue", "Trackbars", 0, 180, nothing)
+cv2.createTrackbar("L-Sat", "Trackbars", 66, 255, nothing)
+cv2.createTrackbar("L-Val", "Trackbars", 134, 255, nothing)
+cv2.createTrackbar("U-Hue", "Trackbars", 180, 180, nothing)
+cv2.createTrackbar("U-Sat", "Trackbars", 255, 255, nothing)
+cv2.createTrackbar("U-Val", "Trackbars", 243, 255, nothing)
+
+font = cv2.FONT_HERSHEY_COMPLEX
+
+if not cap.isOpened(): 
+
+    print("Cannot open camera") 
+
+    exit() 
+
+  
+
+def followLine(contours, frame): 
+
+     
+
+    if len(contours) > 0:
+        c = max(contours, key = cv2.contourArea) 
+
+        M = cv2.moments(c) 
+
+        cx = int(M['m10']/M['m00']) 
+
+        cy = int(M['m01']/M['m00']) 
+
+        print("CX: " + str(cx) + "CY: "+str(cy)) 
+
+         
+
+        if cx >= 140:
+                print("Right")
+                p1.ChangeDutyCycle(40)
+                p2.ChangeDutyCycle(55)
+                
+                
+                GPIO.output(in1, GPIO.LOW)
+                GPIO.output(in2, GPIO.HIGH)
+                GPIO.output(in3, GPIO.LOW)
+                GPIO.output(in4, GPIO.HIGH)
+
+        if cx < 140 and cx > 60:
+                print("straight")
+                p1.ChangeDutyCycle(30)
+                p2.ChangeDutyCycle(30)
+                
+                
+                GPIO.output(in1, GPIO.HIGH)
+                GPIO.output(in2, GPIO.LOW)
+                GPIO.output(in3, GPIO.LOW)
+                GPIO.output(in4, GPIO.HIGH)
+
+        if cx <= 60:
+                print("Left")
+                p1.ChangeDutyCycle(55)
+                p2.ChangeDutyCycle(40)
+                
+                
+                GPIO.output(in1, GPIO.HIGH)
+                GPIO.output(in2, GPIO.LOW)
+                GPIO.output(in3, GPIO.HIGH)
+                GPIO.output(in4, GPIO.LOW)
+        '''else:
+                print("reverse")
+                p1.ChangeDutyCycle(30)
+                p2.ChangeDutyCycle(30)
+                GPIO.output(in1, GPIO.LOW)
+                GPIO.output(in2, GPIO.HIGH)
+                GPIO.output(in3, GPIO.HIGH)
+                GPIO.output(in4, GPIO.LOW)  '''
+
+while True: 
+
+    ret, frame = cap.read() 
+
+     
+
+    crop_img = frame[0:160, 0:200]
+
+  
+
+    gray = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY) 
+
+    hsvFrame = cv2.cvtColor(crop_img, cv2.COLOR_BGR2HSV) 
+
+    l_h = cv2.getTrackbarPos("L-Hue", "Trackbars")
+    l_s = cv2.getTrackbarPos("L-Sat", "Trackbars")
+    l_v = cv2.getTrackbarPos("L-Val", "Trackbars")
+    u_h = cv2.getTrackbarPos("U-Hue", "Trackbars")
+    u_s = cv2.getTrackbarPos("U-Sat", "Trackbars")
+    u_v = cv2.getTrackbarPos("U-Val", "Trackbars")
+
+    lower_red = np.array([l_h, l_s, l_v])
+    upper_red = np.array([u_h, u_s, u_v])
+
+    mask = cv2.inRange(hsvFrame, lower_red, upper_red)
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.erode(mask, kernel)
+
+
+    # Contours detection
+    _, contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        approx = cv2.approxPolyDP(cnt, 0.02*cv2.arcLength(cnt, True), True)
+        x = approx.ravel()[0]
+        y = approx.ravel()[1]
+
+        if area > 400:
+            cv2.drawContours(frame, [approx], 0, (0, 0, 0), 5)
+
+            if len(approx) == 3:
+                cv2.putText(frame, "Triangle", (x, y), font, 1, (0, 0, 0))
+            elif len(approx) == 4:
+                cv2.putText(frame, "Rectangle", (x, y), font, 1, (0, 0, 0))
+            elif len(approx) == 5:
+                cv2.putText(frame, "Pentagon", (x, y), font, 1, (0, 0, 0))
+            elif len(approx) == 6:
+                cv2.putText(frame, "Hexagon", (x, y), font, 1, (0, 0, 0))
+            else:
+                perimeter = cv2.arcLength(cnt, True)
+                circularity = 4*np.pi*(area/(perimeter*perimeter))
+                if circularity > 0.8:
+                    cv2.putText(frame, "Circle", (x, y), font, 1, (0, 0, 0))
+                #else:
+                 #   cv2.putText(frame, "Partial Circle", (x, y), font, 1, (0, 0, 0))
+            if 8< len(approx) < 15:
+                angles = []
+                for i in range(len(approx)):
+                    pa1 = approx[i][0]
+                    pa2 = approx[(i + 1) % len(approx)][0]
+                    pa3 = approx[(i - 1) % len(approx)][0]
+                    angle = np.abs(np.arctan2(pa2[1] - pa1[1], pa2[0] - pa1[0]) - np.arctan2(pa3[1] - pa1[1], pa3[0] - pa1[0]))
+                    angles.append(angle)
+                max_angle = max(angles)
+                min_angle = min(angles)
+
+                #if max_angle > np.pi / 2:
+                    #cv2.putText(frame, "Partial Circle", (x, y), font, 1, (0, 0, 0))
+                    
+                    
+                    
+
+            arrow_vertex_count = len(approx)
+            if arrow_vertex_count == 7:
+                M = cv2.moments(cnt)
+                if M['m00'] != 0:
+                    cx = int(M['m10']/M['m00'])
+                    cy = int(M['m01']/M['m00'])
+
+                    base = max(approx, key=lambda p: ((cx - p[0][0])*2 + (cy - p[0][1])2)*0.5)
+                    tip = min(approx, key=lambda p: ((cx - p[0][0])*2 + (cy - p[0][1])2)*0.5)
+
+                    arrow_direction = ""
+                    dx = base[0][0] - tip[0][0]
+                    dy = base[0][1] - tip[0][1]
+
+                    if abs(dx) > abs(dy):
+                        arrow_direction = "Left" if dx > 0 else "Right"
+                    else:
+                        arrow_direction = "Up" if dy > 0 else "Down"
+
+
+                    cv2.putText(frame, arrow_direction + "Arrow", (x,y), font, 1, (0, 0, 0))
+
+                    
+
+
+    cv2.imshow("Frame", frame)
+    cv2.imshow("Mask", mask)
+
+    # Set range for red color and  
+
+    # define mask 
+
+    red_lower = np.array([150, 100, 50], np.uint8) 
+
+    red_upper = np.array([179, 255, 170], np.uint8) 
+
+    red_mask = cv2.inRange(hsvFrame, red_lower, red_upper) 
+
+  
+
+    # Set range for yellow color and  
+
+    # define mask 
+
+    yellow_lower = np.array([15, 92 , 80], np.uint8) 
+
+    yellow_upper = np.array([41, 255, 148], np.uint8) 
+
+    yellow_mask = cv2.inRange(hsvFrame, yellow_lower, yellow_upper) 
+
+     
+
+    # Set range for green color and  
+
+    # define mask 
+
+    green_lower = np.array([71, 120, 51], np.uint8) 
+
+    green_upper = np.array([90, 255, 170], np.uint8) 
+
+    green_mask = cv2.inRange(hsvFrame, green_lower, green_upper) 
+
+  
+
+    # Set range for blue color and 
+
+    # define mask 
+
+    blue_lower = np.array([100, 120, 61], np.uint8) 
+
+    blue_upper = np.array([120, 255, 150], np.uint8) 
+
+    blue_mask = cv2.inRange(hsvFrame, blue_lower, blue_upper) 
+
+
+    blur = cv2.GaussianBlur(gray,(5,5),0) 
+
+    ret,thresh1 = cv2.threshold(blur,100,255,cv2.THRESH_BINARY_INV) 
+
+    mask = cv2.erode(thresh1, None, iterations=2) 
+
+    mask = cv2.dilate(mask, None, iterations=2) 
+
+    low_b = 0 
+
+    high_b = 60 
+
+    black_mask = cv2.inRange(gray, low_b, high_b)
+
+     
+
+    # Morphological Transform, Dilation 
+
+    # for each color and bitwise_and operator 
+
+    # between imageFrame and mask determines 
+
+    # to detect only that particular color
+    kernal = np.ones((5, 5), "uint8") 
+
+     
+
+    # For red color 
+
+    red_mask = cv2.dilate(red_mask, kernal) 
+
+    res_red = cv2.bitwise_and(crop_img, crop_img, mask = red_mask) 
+
+  
+
+    # For yellow color 
+
+    yellow_mask = cv2.dilate(yellow_mask, kernal) 
+
+    res_yellow = cv2.bitwise_and(crop_img, crop_img, mask = yellow_mask) 
+
+  
+
+    # For green color 
+
+    green_mask = cv2.dilate(green_mask, kernal) 
+
+    res_green = cv2.bitwise_and(crop_img, crop_img, mask = green_mask) 
+
+     
+
+    # For blue color 
+
+    blue_mask = cv2.dilate(blue_mask, kernal) 
+
+    res_blue = cv2.bitwise_and(crop_img, crop_img, mask = blue_mask) 
+
+     
+
+    #For black color 
+
+    black_mask = cv2.dilate(black_mask, kernal) 
+
+  
+    
+    # Creating contour to track red color 
+
+    _, contours1, hierarchy1 = cv2.findContours(red_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+
+     
+
+    for pic, contour in enumerate(contours1): 
+
+        area = cv2.contourArea(contour) 
+
+        if(area > 300): 
+
+            x, y, w, h = cv2.boundingRect(contour) 
+
+            frame = cv2.rectangle(crop_img, (x, y),  
+
+                                    (x + w, y + h), 
+
+                                    (0, 0, 255), 2) 
+
+  
+
+            cv2.putText(frame, "Red Colour", (x, y), 
+
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, 
+
+                        (0, 0, 255))     
+
+  
+
+    # Creating contour to track yellow color 
+
+    _, contours2, hierarchy2 = cv2.findContours(yellow_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+
+     
+
+    for pic, contour in enumerate(contours2): 
+
+        area = cv2.contourArea(contour) 
+
+        if(area > 300): 
+
+            x, y, w, h = cv2.boundingRect(contour) 
+
+            frame = cv2.rectangle(crop_img, (x, y),  
+
+                                    (x + w, y + h),  
+
+                                    (255, 255, 0), 2) 
+
+  
+
+            cv2.putText(frame, "Yellow Colour", (x, y),  
+
+                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, 
+
+                        (255, 255, 0))     
+
+  
+
+    # Creating contour to track green color 
+
+    _, contours3, hierarchy3 = cv2.findContours(green_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+
+     
+
+    for pic, contour in enumerate(contours3): 
+
+        area = cv2.contourArea(contour) 
+
+        if(area > 300): 
+
+            x, y, w, h = cv2.boundingRect(contour) 
+
+            frame = cv2.rectangle(crop_img, (x, y),  
+
+                                    (x + w, y + h), 
+
+                                    (0, 255, 0), 2) 
+
+  
+
+            cv2.putText(frame, "Green Colour", (x, y), 
+
+                        cv2.FONT_HERSHEY_SIMPLEX,  
+
+                        1.0, (0, 255, 0)) 
+
+  
+
+    # Creating contour to track blue color 
+
+    _, contours4, hierarchy4 = cv2.findContours(blue_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+
+     
+
+    for pic, contour in enumerate(contours4): 
+
+        area = cv2.contourArea(contour) 
+
+        if(area > 300): 
+
+            x, y, w, h = cv2.boundingRect(contour) 
+
+            frame = cv2.rectangle(crop_img, (x, y), 
+
+                                    (x + w, y + h), 
+
+                                    (255, 0, 0), 2) 
+
+  
+
+            cv2.putText(frame, "Blue Colour", (x, y), 
+
+                        cv2.FONT_HERSHEY_SIMPLEX, 
+
+                        1.0, (255, 0, 0)) 
+
+     
+
+    #Creating contour to track black colour 
+
+    #_, contours5, hierarchy5 = cv2.findContours(mask.copy(),1,cv2.CHAIN_APPROX_NONE) 
+
+    _,contours5, hierarchy5 = cv2.findContours(black_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE) 
+
+    cv2.imshow('Colour detected in real time', crop_img) 
+
+  
+
+    '''if len(contours1) > 0: 
+
+        followLine(contours1, frame) 
+
+        contours1 = [] 
+
+        print(len(contours1)) 
+
+     
+
+    elif len(contours2) > 0: 
+
+        followLine(contours2, frame) 
+
+        contours2 = [] 
+
+        print(len(contours2)) '''
+
+     
+
+    if len(contours3) > 0: 
+
+        followLine(contours3, frame) 
+
+        contours3 = [] 
+
+        print(len(contours3)) 
+
+  
+
+    elif len(contours4) > 0: 
+
+        followLine(contours4, frame) 
+
+        contours4 = [] 
+
+        print(len(contours4)) 
+
+  
+
+    elif len(contours5) > 0: 
+
+        followLine(contours5, frame) 
+
+        contours5 = [] 
+
+        print(len(contours5)) 
+
+  
+
+    else: 
+
+        print("Reverse") 
+
+        p1.ChangeDutyCycle(30) 
+
+        p2.ChangeDutyCycle(30)
+
+
+        
+
+        GPIO.output(in1,GPIO.LOW) 
+
+        GPIO.output(in2,GPIO.HIGH) 
+
+        GPIO.output(in3,GPIO.HIGH) 
+
+        GPIO.output(in4,GPIO.LOW) 
+
+  
+
+    if cv2.waitKey(1) & 0xff == ord('q'): 
+
+        break 
+
+  
+GPIO.cleanup()
+
+cap.release() 
+
+cv2.destroyAllWindows()
